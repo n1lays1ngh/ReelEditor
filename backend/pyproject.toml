@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paintreel"
+version = "0.1.0"
+description = "Edit long watercolor painting videos into beat-synced Instagram Reels"
+requires-python = ">=3.11"
+dependencies = [
+  "librosa>=0.10",
+  "numpy",
+  "opencv-python-headless",
+  "pydantic>=2",
+  "pyyaml",
+  "matplotlib",
+  "fastapi",
+  "uvicorn[standard]",
+  "python-multipart",
+  "soundfile",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+paintreel = "paintreel.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+log_cli_level = "WARNING"

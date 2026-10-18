@@ -1,0 +1,270 @@
+# PaintReel configuration.
+# Every tuning number lives here. Per-machine overrides go in config.local.yaml next to this file
+# (or a file named by the PAINTREEL_CONFIG env var); per-job overrides come from the CLI/UI.
+
+app:
+  # Extra folders whose videos/songs are listed next to uploads (searched recursively). Optional.
+  media_dirs: []
+  max_scan_depth: 3
+  video_extensions: [".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"]
+  song_extensions: [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"]
+  max_upload_mb: 4000
+  # Relative paths are relative to the backend/ folder.
+  data_dir: "data"
+  workers: 1
+
+defaults:
+  analysis:
+    sample_fps: 1.0              # analysis samples per second of source
+    decode_width: 320            # decode width for the streaming pass (phase correlation)
+    thumb_width: 256             # stored colour thumbnails (memmap on disk); detail measures use these
+    keyframe_decode: auto        # auto | always | never — decode only keyframes (much faster on long files)
+    keyframe_auto_factor: 1.5    # auto: use keyframes if keyframe interval <= factor / sample_fps
+    canvas_sample_count: 25      # frames (from the first part of the video) used to detect the paper
+    canvas_sample_portion: 0.3
+    canvas_min_area: 0.05        # fraction of frame
+    canvas_max_area: 0.98
+    canvas_min_rectangularity: 0.6
+    canvas_margin: 0.01          # expand detected bbox by this fraction of frame size
+    clean_window: 15             # samples in the centered running median ("clean canvas")
+    occlusion_diff_threshold: 28 # 0-255 per-pixel difference counted as occluded
+    skin_diff_factor: 0.4        # skin-coloured pixels need only this fraction of the threshold
+    skin_cr: [133, 173]
+    skin_cb: [77, 127]
+    clean_threshold: 0.03        # occlusion below this = clean frame
+    activity_lag: 4              # samples between clean canvases compared for activity / visual change
+    activity_smooth: 3
+    progress_blur: 5             # px (thumb space) gaussian blur before progress distance
+    progress_median_window: 5
+    bump_threshold_px: 6         # global shift (source px) between samples = camera bump
+    bump_min_quadrants: 3        # ...confirmed only if this many frame quadrants (of 4) agree on the shift
+    lighting_jump: 0.08          # relative median brightness change between samples
+    bad_pad_seconds: 2.0
+    merge_gap_seconds: 5.0
+    idle_window_seconds: 8.0
+    idle_min_seconds: 12.0
+    idle_progress_eps: 0.004
+    idle_activity_max: 0.15
+    final_search_portion: 0.2    # fallback search window for the final frame
+    final_stable_samples: 3
+    final_completion: 0.99       # the hold frame is in the first clean, stable stretch after progress reaches this
+    progress_work_weight: 0.5    # progress = blend of likeness to the final piece and cumulative paint change
+    start_progress: 0.01         # painting has started once progress passes this
+    visual:
+      change_threshold: 18       # per-pixel clean-canvas change (0-255) counted as "changed area"
+      hue_bins: 18
+      sat_bins: 4
+      hue_min_saturation: 40     # pixels below this saturation (0-255) are bare paper: ignored for colour
+      canny_low: 40
+      canny_high: 120
+    events:
+      weights: {area: 1.0, hue: 1.0, detail: 0.6, edges: 0.4}
+      smooth_seconds: 3.0
+      min_gap_seconds: 4.0       # minimum spacing between event peaks
+      min_score: 0.12            # peak visual-change score (0-1) for an event
+      extent_fraction: 0.35      # an event lasts while its score stays above this fraction of its peak
+      max_extent_seconds: 60.0
+      clean_search_seconds: 12.0 # look this far before/after an event for hand-free "before"/"after" frames
+      wash_area: 0.55            # normalised changed-area level above which an event is a "wash"
+      hue_dominance: 1.2         # colour change / area change above this = "new colour"
+      detail_dominance: 1.2      # detail change / max(area, colour) above this = "detail"
+      bloom_max_occlusion: 0.02  # change while no hand is on the paper = "bloom"
+      bloom_min_area: 0.3
+
+  audio:
+    sr: 22050
+    hop_length: 512
+    pad_seconds: 2.0
+    auto_segment_seconds: 30.0
+    energy_smooth_seconds: 0.75
+    energy_normalization: song   # song | segment
+    energy_percentiles: [10, 95]
+    beats_per_bar: 4
+    beat_refine_seconds: 0.06    # snap tracked beats to the strongest onset within this window
+    waveform_bins: 2000
+    energy_curve_hz: 10
+    section_seconds: 8.0         # roughly one section per this many seconds
+    max_sections: 6
+    drop_window: [0.25, 0.85]    # drop is searched in this portion of the segment
+
+  planner:
+    strategy: events             # events (visual events matched to beats) | smooth (continuous timelapse) | uniform
+    fps: 30
+    speed:                       # smooth strategy: rate range driven by music energy
+      min: 3.0
+      max: 300.0
+      gamma: 1.0                 # energy curve shaping (<1 = faster sooner)
+      floor: 0.5                 # hard clamp on the realised rate
+      ceiling: 3000.0
+    content:                     # smooth strategy: where output time goes
+      base_weight: 0.35
+      activity_weight: 1.0
+      activity_power: 1.0
+    events:                      # events strategy
+      min_strength: 0.15         # events weaker than this are ignored
+      show_reward: 1.0           # reward for showing an event (x its strength)
+      beat_match: 1.0            # extra reward for a strong event on a strong beat
+      gap_penalty: 0.5           # x (octaves the gap between cuts deviates from the target beats-per-cut)^2
+      base_strength: 0.2         # beat strength = base + downbeat + section/drop + onset (capped at 1)
+      downbeat_strength: 0.5
+      section_strength: 0.5
+      onset_strength: 0.3
+      drop_bonus: 3.0            # extra reward for putting an event exactly on the drop
+      min_opening_speed: 1.0     # an opening slower than this (little to show) is merged into the first event
+      coverage: 0.5              # 0 = only the strongest moments; 1 = the best moment of every part of the painting
+      pace_weight: 0.5           # keep moments near their share of the painting's work along the reel...
+      pace_tolerance: 0.2        # ...a deviation of this fraction of the reel costs pace_weight
+      jump_energy_min: 0.6       # at/above this energy: play the event fast, then hold its result ("jump")
+      jump_max_beats: 2.5        # ...but only for segments up to this many beats (longer ones flow instead)
+      moment_energy_max: 0.25    # below this energy: show the event itself near real time ("moment")
+      moment_speed: 3.0
+      play_fraction: 0.45        # jump: share of the segment spent playing the event
+      ease: 0.6                  # speed-ramp strength of flowing segments (0 = constant speed)
+      curve_points: 9
+    cuts:
+      min_beats_per_cut: 1       # at full energy
+      max_beats_per_cut: 8       # at zero energy
+      prefer_downbeats: true
+      cut_on_sections: true
+      min_segment_seconds: 0.3
+      clean_search_seconds: 6.0  # smooth strategy: nudge occluded cut source times to the cleanest sample...
+      clean_search_fraction: 0.25 # ...within this fraction of the shorter neighbouring chunk's source span
+    modes:
+      realtime_max_speed: 12.0
+    opening:
+      start_progress: 0.0        # start at the first sample with at least this progress
+      lead_seconds: 0.0          # ...minus this many source seconds
+      hold_beats: 0              # optional opening hold on the first state
+    ending:
+      hold_seconds: 2.5
+      hold_min: 2.0
+      hold_max: 3.2
+      zoom_out: true
+      zoom_from: 1.08
+      transition: xfade          # cut | xfade
+      transition_frames: 8
+    transitions:
+      xfade_enabled: true
+      xfade_energy_max: 0.4      # crossfade at boundaries calmer than this
+      xfade_frames: 4
+      xfade_beat_fraction: 0.0   # >0: crossfade length = this fraction of a beat (overrides frames)
+      xfade_min_frames: 2
+    reveal:
+      enabled: false
+      pre_drop_progress: 0.6     # progress reached at the drop
+
+  render:
+    width: 1080
+    height: 1920
+    segment_preset: veryfast
+    final_preset: medium
+    crf: 18
+    crop_mode: auto              # auto | crop | pad
+    max_crop_loss: 0.2           # auto: crop if <= this fraction of the canvas is lost, else pad
+    blur_radius: 12              # boxblur radius (applied at quarter resolution) for the padded background
+    parallel_segments: 3         # segment renders running at once
+    keyframe_skip_factor: 2.0    # keyframe-only decode when candidate frames are > factor * keyframe interval apart
+    seek_margin_seconds: 0.5
+    clean_sampling: true         # pick the least-occluded frame within each output frame's time slot...
+    clean_min_step: 0.5          # ...when one output frame spans at least this many source seconds
+    candidates_per_frame: 3
+    clean_bias: 0.02             # occlusion penalty per half time-slot away from the exact target time
+    max_candidates_factor: 6     # cap on decoded candidates per segment (x output frames)
+    debug_width: 540
+    debug_height: 960
+    cover_quality: 92
+    audio:
+      fade_in: 0.5
+      fade_out: 1.5
+      lufs: -14.0
+      true_peak: -1.5
+      lra: 11.0
+      two_pass: true
+      bitrate: 192k
+      sample_rate: 48000
+
+presets:
+  energetic:
+    planner:
+      strategy: events
+      cuts: {min_beats_per_cut: 1, max_beats_per_cut: 4}
+      events: {jump_energy_min: 0.45, moment_energy_max: 0.15, play_fraction: 0.4}
+      transitions: {xfade_energy_max: 0.2, xfade_frames: 3}
+  calm:
+    planner:
+      strategy: events
+      cuts: {min_beats_per_cut: 4, max_beats_per_cut: 16}
+      events: {jump_energy_min: 0.9, moment_energy_max: 0.45, moment_speed: 2.0, ease: 0.8}
+      transitions: {xfade_energy_max: 0.8, xfade_frames: 8}
+      ending: {hold_seconds: 3.0, hold_max: 3.5}
+  reveal:
+    planner:
+      strategy: events
+      cuts: {min_beats_per_cut: 1, max_beats_per_cut: 8}
+      events: {jump_energy_min: 0.55}
+      reveal: {enabled: true, pre_drop_progress: 0.55}
+  smooth:
+    planner:
+      strategy: smooth
+      speed: {min: 4.0, max: 400.0, gamma: 0.8}
+      cuts: {min_beats_per_cut: 2, max_beats_per_cut: 8}
+
+# Shown on the style cards in the UI (order = display order).
+preset_info:
+  energetic: {title: "Energetic", icon: "bolt", description: "Every beat lands on a new wash or colour. Fast, punchy, stop-motion feel."}
+  calm: {title: "Calm", icon: "leaf", description: "Fewer cuts, real-time brush moments and soft crossfades where colour blooms."}
+  reveal: {title: "Reveal", icon: "sparkle", description: "Builds up slowly and keeps the finished painting hidden until the drop."}
+  smooth: {title: "Smooth timelapse", icon: "wave", description: "One continuous timelapse that speeds up and slows down with the music."}
+
+# Simple controls in the UI. Each maps a 0..1 slider (or a value) onto config values, relative to the preset:
+#   mul: [at 0, at 1]  -> preset value x factor (geometric, factor 1 at the default)
+#   at:  [at 0, at 1]  -> absolute value at the ends, the preset value at the default (linear)
+#   value: true        -> the slider value itself (plus offset)
+controls:
+  - key: pace
+    label: Pace
+    left: Calmer
+    right: Punchier
+    min: 0
+    max: 1
+    step: 0.05
+    default: 0.5
+    targets:
+      - {path: planner.speed.min, mul: [0.5, 2.0]}
+      - {path: planner.speed.max, mul: [0.4, 2.5]}
+      - {path: planner.events.jump_energy_min, at: [1.0, 0.2]}
+      - {path: planner.events.moment_energy_max, at: [0.6, 0.0]}
+      - {path: planner.events.play_fraction, at: [0.75, 0.25]}
+  - key: cuts
+    label: Cuts
+    left: Fewer
+    right: More
+    min: 0
+    max: 1
+    step: 0.05
+    default: 0.5
+    targets:
+      - {path: planner.cuts.min_beats_per_cut, mul: [3.0, 0.34], round: true, min: 1}
+      - {path: planner.cuts.max_beats_per_cut, mul: [2.0, 0.5], round: true, min: 1}
+  - key: transitions
+    label: Smooth transitions
+    left: "Off"
+    right: More
+    min: 0
+    max: 1
+    step: 0.05
+    default: 0.5
+    targets:
+      - {path: planner.transitions.xfade_energy_max, at: [0.0, 1.0]}
+      - {path: planner.transitions.xfade_frames, mul: [0.5, 2.5], round: true, min: 2}
+  - key: hold
+    label: Final hold
+    unit: s
+    min: 1.5
+    max: 5.0
+    step: 0.1
+    default_from: planner.ending.hold_seconds
+    targets:
+      - {path: planner.ending.hold_seconds, value: true}
+      - {path: planner.ending.hold_min, value: true, offset: -0.5, min: 1.0}
+      - {path: planner.ending.hold_max, value: true, offset: 0.7}

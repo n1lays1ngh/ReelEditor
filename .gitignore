@@ -1,0 +1,10 @@
+backend/.venv/
+backend/data/
+backend/config/config.local.yaml
+**/__pycache__/
+*.egg-info/
+.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+backend/tests/.synth/
